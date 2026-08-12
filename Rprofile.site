@@ -1,0 +1,39 @@
+# Use RStudio's CRAN mirror to get binary packages
+# 'latest' just means it has all available versions.
+# We can specify version numbers in devtools::install_version
+options(repos = c(CRAN = "https://packagemanager.posit.co/all/__linux__/noble/2026-05-11+Fksl5Ok_")) ## Using the 2026-05-11 snapshot
+
+
+# If install.packages() is run from an RStudio console, it downloads binaries.
+# If it is run from an RStudio terminal, from a Jupyter terminal, or from a
+# Jupyter R notebook, it downloads source. Setting the user agent to the string
+# below sets it to be binary. This may improve image build times.
+# If it works, it'd be better to dynamically set the R version as above, and
+# also the RStudio Server version if possible.
+options(
+  HTTPUserAgent = sprintf(
+    "RStudio Server (%s); R (%s %s %s %s)",
+    "2024.12.0-467",
+    getRversion(),
+    R.version$platform,
+    R.version$arch,
+    R.version$os
+  )
+)
+
+## Source extra Rprofile files.
+#
+# This lets us easily add new code via extraFiles (or other z2jh-related
+# magic) without having to rebuild the image each time.
+
+# Get a list of files in the directory
+rprofile_dir <- "/etc/R/Rprofile.site.d/"
+rprofile_files <- list.files(rprofile_dir, full.names = TRUE)
+
+# Source each file
+for (rprofile_file in rprofile_files) {
+    cat("Sourcing:", rprofile_file, "\n")
+    source(rprofile_file)
+}
+# Don't keep temporary variables in environment
+rm(rprofile_dir, rprofile_files, rprofile_file)

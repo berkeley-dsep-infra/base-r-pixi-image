@@ -1,0 +1,109 @@
+name: Update Base Image Reference
+on:
+  repository_dispatch:
+    types: [base-image-updated]
+
+  workflow_dispatch:
+    inputs:
+      base_image_name:
+        description: "Base image name (i.e. ucb-datahub-2018/testing/base-python-image)"
+        required: true
+      base_image_sha:
+        description: "New base image SHA tag"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: "update-base-image-${{ github.event.client_payload.base_image_sha || github.event.inputs.base_image_sha }}"
+  cancel-in-progress: true
+
+jobs:
+  update-base-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve inputs
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            BASE_NAME="${{ github.event.client_payload.base_image_name }}"
+            NEW_SHA="${{ github.event.client_payload.base_image_sha }}"
+          else
+            BASE_NAME="${{ github.event.inputs.base_image_name }}"
+            NEW_SHA="${{ github.event.inputs.base_image_sha }}"
+          fi
+
+          BRANCH="update-base-image-$NEW_SHA"
+
+          echo "base_name=$BASE_NAME" >> $GITHUB_OUTPUT
+          echo "new_sha=$NEW_SHA" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Debug resolved variables
+        run: |
+          echo "BASE_NAME=${{ steps.vars.outputs.base_name }}"
+          echo "NEW_SHA=${{ steps.vars.outputs.new_sha }}"
+          echo "BRANCH=${{ steps.vars.outputs.branch }}"
+
+      - name: Update Dockerfile
+        run: |
+          echo "Updating Dockerfile to ${{ steps.vars.outputs.base_name }}:${{ steps.vars.outputs.new_sha }}"
+          sed -i "s|FROM us-central1-docker.pkg.dev/${{ steps.vars.outputs.base_name }}:.*|FROM us-central1-docker.pkg.dev/${{ steps.vars.outputs.base_name }}:${{ steps.vars.outputs.new_sha }}|g" Dockerfile
+
+      - name: Set git identity
+        run: |
+          git config --global user.email "${{ vars.IMAGE_BUILDER_BOT_EMAIL }}"
+          git config --global user.name "${{ vars.IMAGE_BUILDER_BOT_NAME }}"
+
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.app_id }}
+          private-key: ${{ secrets.PRIVATE_KEY_SECRET}}
+          owner: ${{ github.repository_owner }}
+
+      - name: Commit and Create/Update PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          BRANCH="${{ steps.vars.outputs.branch }}"
+          BASE_NAME="${{ steps.vars.outputs.base_name }}"
+          NEW_SHA="${{ steps.vars.outputs.new_sha }}"
+
+          CHANGED_FILES=$(git status --porcelain -uno | awk '{print $2}')
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No changes detected. Skipping PR creation."
+            exit 0
+          fi
+
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // empty')
+
+          git checkout -B "$BRANCH"
+          for file in $CHANGED_FILES; do
+            git add "$file"
+          done
+
+          COMMIT_MESSAGE="Update base image to ${BASE_NAME}:${NEW_SHA}"
+          git commit -m "$COMMIT_MESSAGE" || echo "No commit created"
+
+          git push origin "$BRANCH" --force
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Updating existing PR #$EXISTING_PR"
+            gh pr edit "$EXISTING_PR" \
+              --title "$COMMIT_MESSAGE" \
+              --body "Updated files: $CHANGED_FILES"
+          else
+            echo "Creating new PR"
+            gh pr create \
+              --title "$COMMIT_MESSAGE" \
+              --body "Updated files: $CHANGED_FILES" \
+              --head "$BRANCH" \
+              --base main
+          fi
