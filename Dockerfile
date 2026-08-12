@@ -11,18 +11,19 @@ FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pi
 USER root
 RUN curl -fsSL https://pixi.sh/install.sh | PIXI_HOME=/opt/pixi sh
 ENV PATH=/opt/pixi/bin:$PATH
+RUN install -d -o ${NB_USER} -g ${NB_USER} /tmp/solve
 
 USER ${NB_USER}
 WORKDIR /tmp/solve
 COPY --chown=${NB_USER}:${NB_USER} pixi.toml scripts/merge-base-manifest.py scripts/pixi-pypi-requirements.py scripts/dedupe-explicit-spec.py ./
 
-RUN mamba list -n notebook --export | tail -n +3 > /tmp/base-manifest.txt && \
-    python3 merge-base-manifest.py /tmp/base-manifest.txt pixi.toml /tmp/merged-pixi.toml && \
-    mkdir merged && cp /tmp/merged-pixi.toml merged/pixi.toml && \
-    (cd merged && pixi install) && \
-    (cd merged && pixi workspace export conda-explicit-spec --platform linux-64 --ignore-pypi-errors /tmp/spec-out) && \
-    python3 dedupe-explicit-spec.py /tmp/spec-out/*_conda_spec.txt /tmp/explicit.txt && \
-    (cd merged && pixi list --json) | python3 pixi-pypi-requirements.py > /tmp/pip-requirements.txt
+RUN mamba list -n notebook --export | tail -n +3 > base-manifest.txt && \
+    mkdir -p /tmp/merged && \
+    python3 merge-base-manifest.py base-manifest.txt pixi.toml /tmp/merged/pixi.toml && \
+    pixi install --manifest-path /tmp/merged/pixi.toml && \
+    pixi workspace export conda-explicit-spec --manifest-path /tmp/merged/pixi.toml --platform linux-64 --ignore-pypi-errors spec-out && \
+    python3 dedupe-explicit-spec.py spec-out/*_conda_spec.txt /tmp/explicit.txt && \
+    pixi list --manifest-path /tmp/merged/pixi.toml --json | python3 pixi-pypi-requirements.py > /tmp/pip-requirements.txt
 
 # ===================================================================
 # Final image
