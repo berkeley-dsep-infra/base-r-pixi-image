@@ -1,3 +1,32 @@
+FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:0089ef7 AS solver
+
+# -------------------------------
+# Solve this image's additional packages with pixi, against a fixed pin for
+# every package already installed in the base (this same discipline is used
+# by other leaf images off this base too -- mamba env update can silently
+# downgrade/substitute an already-installed package to satisfy a new one).
+# pixi never touches /srv/conda and is not present in the final image; mamba
+# (already present, inherited from the base) does the real, no-solve install.
+# -------------------------------
+USER root
+RUN curl -fsSL https://pixi.sh/install.sh | PIXI_HOME=/opt/pixi sh
+ENV PATH=/opt/pixi/bin:$PATH
+
+USER ${NB_USER}
+WORKDIR /tmp/solve
+COPY --chown=${NB_USER}:${NB_USER} pixi.toml scripts/merge-base-manifest.py scripts/pixi-pypi-requirements.py scripts/dedupe-explicit-spec.py ./
+
+RUN mamba list -n notebook --export | tail -n +3 > /tmp/base-manifest.txt && \
+    python3 merge-base-manifest.py /tmp/base-manifest.txt pixi.toml /tmp/merged-pixi.toml && \
+    mkdir merged && cp /tmp/merged-pixi.toml merged/pixi.toml && \
+    (cd merged && pixi install) && \
+    (cd merged && pixi workspace export conda-explicit-spec --platform linux-64 --ignore-pypi-errors /tmp/spec-out) && \
+    python3 dedupe-explicit-spec.py /tmp/spec-out/*_conda_spec.txt /tmp/explicit.txt && \
+    (cd merged && pixi list --json) | python3 pixi-pypi-requirements.py > /tmp/pip-requirements.txt
+
+# ===================================================================
+# Final image
+# ===================================================================
 FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:0089ef7
 
 # -------------------------------
@@ -62,11 +91,11 @@ RUN apt-get update -qq > /dev/null && \
     rm -rf /var/lib/apt/lists/*
 
 USER ${NB_USER}
-COPY --chown=${NB_USER}:${NB_USER} environment.yml /tmp/environment.yml
+COPY --from=solver --chown=${NB_USER}:${NB_USER} /tmp/explicit.txt /tmp/pip-requirements.txt /tmp/
 
-# Update existing /srv/conda/notebook environment with new packages
-RUN mamba env update -n notebook -f /tmp/environment.yml && \
-    mamba clean -afy && rm -rf /tmp/environment.yml
+RUN mamba install -n notebook --file /tmp/explicit.txt -y && \
+    pip install --no-cache-dir -r /tmp/pip-requirements.txt && \
+    mamba clean -afy && rm -f /tmp/explicit.txt /tmp/pip-requirements.txt
 
 USER root
 # -------------------------------
@@ -92,4 +121,3 @@ RUN R -e "install.packages('IRkernel')" && \
 # -------------------------------
 COPY install.R /tmp/install.R
 RUN Rscript /tmp/install.R && rm -rf /tmp/downloaded_packages/ /tmp/*.rds
-
