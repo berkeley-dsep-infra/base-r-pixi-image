@@ -85,6 +85,21 @@ RUN apt-get update -qq > /dev/null && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# ------------------------------------------------------------
+# Quarto
+# ------------------------------------------------------------
+USER root
+ENV _QUARTO_VERSION=1.10.18
+RUN curl -L -o /tmp/quarto.deb https://github.com/quarto-dev/quarto-cli/releases/download/v${_QUARTO_VERSION}/quarto-${_QUARTO_VERSION}-linux-amd64.deb
+RUN apt-get update > /dev/null && \
+    apt-get install /tmp/quarto.deb > /dev/null && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -f /tmp/quarto.deb
+
+# ------------------------------------------------------------
+# Conda packages
+# ------------------------------------------------------------
 USER ${NB_USER}
 COPY --from=solver --chown=${NB_USER}:${NB_USER} /tmp/explicit.txt /tmp/pip-requirements.txt /tmp/
 
