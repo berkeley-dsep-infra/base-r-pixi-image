@@ -1,4 +1,4 @@
-FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:a165e11
+FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:a165e11 AS solver
 
 # -------------------------------
 # Solve this image's additional packages with pixi, against a fixed pin for
