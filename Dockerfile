@@ -1,4 +1,4 @@
-FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:8321c5d AS solver
+FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:a165e11
 
 # -------------------------------
 # Solve this image's additional packages with pixi, against a fixed pin for
@@ -22,7 +22,7 @@ RUN /opt/pixi-solve/solve.sh
 # ===================================================================
 # Final image
 # ===================================================================
-FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:8321c5d
+FROM us-central1-docker.pkg.dev/ucb-datahub-2018/base-images-repo/base-python-pixi-image:a165e11
 
 # -------------------------------
 # Environment for R
